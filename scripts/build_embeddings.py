@@ -1,0 +1,1 @@
+"""Generate embeddings from processed data."""

@@ -1,0 +1,1 @@
+"""Scraper module for crawling Cornell faculty pages."""

@@ -1,0 +1,1 @@
+"""Embedding + retrieval logic (Chroma/FAISS)."""

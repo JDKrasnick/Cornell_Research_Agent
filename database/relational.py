@@ -1,0 +1,1 @@
+"""SQLite for structured metadata."""
