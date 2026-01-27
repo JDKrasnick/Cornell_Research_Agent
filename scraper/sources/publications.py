@@ -1,6 +1,6 @@
 import requests
 from typing import List
-from lab_pages import LabPageExtractionResult  # Assuming this is your imported Pydantic model
+from .lab_pages import LabPageExtractionResult   # Assuming this is your imported Pydantic model
 
 SEMANTIC_SCHOLAR_SEARCH_API = "https://api.semanticscholar.org/graph/v1/author/search"
 SEMANTIC_SCHOLAR_AUTHOR_PAPERS_API = "https://api.semanticscholar.org/graph/v1/author/{author_id}/papers"
@@ -34,9 +34,6 @@ def populate_labpage_from_semantic_scholar(
         # Fill research areas and publications URL
         partial_result.research_areas = author.get("fieldsOfStudy", [])
         partial_result.publications_url = author.get("url")
-        partial_result.source_url = author.get("url")
-        partial_result.lab_url = None
-        partial_result.personal_site_url = None
 
 
         papers_resp = requests.get(
