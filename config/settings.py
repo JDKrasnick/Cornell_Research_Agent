@@ -3,6 +3,8 @@
 Handles API keys, model settings, and database paths.
 """
 
+#AI_Generated
+
 import os
 from pathlib import Path
 
