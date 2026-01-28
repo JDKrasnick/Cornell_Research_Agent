@@ -7,6 +7,14 @@ from .publications_db import (
     store_publications,
     get_publications_for_professor,
 )
+from .faculty_db import (
+    Faculty,
+    init_faculty_table,
+    store_faculty,
+    get_all_faculty,
+    get_faculty_by_name,
+    get_faculty_by_department,
+)
 
 __all__ = [
     "get_db_connection",
@@ -15,4 +23,10 @@ __all__ = [
     "init_publications_table",
     "store_publications",
     "get_publications_for_professor",
+    "Faculty",
+    "init_faculty_table",
+    "store_faculty",
+    "get_all_faculty",
+    "get_faculty_by_name",
+    "get_faculty_by_department",
 ]

@@ -34,9 +34,11 @@ def init_database(db_path: Optional[Path] = None) -> None:
         db_path: Optional custom database path.
     """
     from .publications_db import init_publications_table
+    from .faculty_db import init_faculty_table
 
     conn = get_db_connection(db_path)
     try:
         init_publications_table(conn)
+        init_faculty_table(conn)
     finally:
         conn.close()

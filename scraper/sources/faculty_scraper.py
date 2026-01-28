@@ -26,9 +26,16 @@ def extract_faculty_html(url):
 def extract_all_pages(base_url: str) -> list[str]:
     """Fetch all paginated pages from the directory."""
     pages = []
-    page_num = 0
 
-    while True:
+    # First, fetch the base page
+    html = extract_faculty_html(base_url)
+    if not html:
+        return pages
+    pages.append(html)
+
+    # Try pagination with ?page=N
+    page_num = 1
+    while page_num <= 20:
         url = f"{base_url}?page={page_num}"
         html = extract_faculty_html(url)
 
@@ -36,16 +43,15 @@ def extract_all_pages(base_url: str) -> list[str]:
             break
 
         soup = BeautifulSoup(html, "html.parser")
-        # Check if there are any faculty entries on this page
-        if not soup.select("div.views-row"):
+        # Check if page has any content (faculty rows or profile links)
+        has_faculty_rows = soup.select("div.views-row")
+        has_profile_links = soup.find_all("a", href=lambda h: h and "/people/" in h)
+
+        if not has_faculty_rows and not has_profile_links:
             break
 
         pages.append(html)
         page_num += 1
-
-        # Safety limit to avoid infinite loops
-        if page_num > 20:
-            break
 
     print(f"Fetched {len(pages)} pages")
     return pages
@@ -54,14 +60,15 @@ def extract_all_pages(base_url: str) -> list[str]:
 def parse_all_faculty_pages(base_url: str) -> list[dict]:
     """Fetch and parse all pages of the faculty directory.
 
-    Returns list of dicts with: name, department, email, website
+    Returns list of dicts with: name, department, email, website, profile_url
+    Uses a generic parser that extracts names and their linked profile URLs.
     """
     all_faculty = []
     pages = extract_all_pages(base_url)
     site_base_url = extract_base_url(base_url)
 
     for html in pages:
-        faculty_list = parse_faculty_directory(html, site_base_url)
+        faculty_list = parse_faculty_generic(html, site_base_url)
         all_faculty.extend(faculty_list)
 
     print(f"Found {len(all_faculty)} faculty members total")
@@ -129,11 +136,42 @@ def extract_department_from_url(url: str) -> Optional[str]:
     return None
 
 
-def parse_faculty_directory(html: str, base_url: str) -> list[dict]:
-    """Parse faculty directory HTML and return list of faculty dicts."""
+def is_likely_name(text: str) -> bool:
+    """Check if text looks like a person's name."""
+    if not text or len(text) < 3 or len(text) > 50:
+        return False
+
+    # Skip common non-name text
+    skip_words = {"people", "faculty", "staff", "home", "about", "contact", "research",
+                  "publications", "news", "events", "directory", "search", "menu",
+                  "skip to", "main content", "navigation", "read more", "view profile"}
+    if text.lower() in skip_words:
+        return False
+
+    # Names typically have at least 2 parts and contain mostly letters/spaces
+    words = text.split()
+    if len(words) < 2:
+        return False
+
+    # Check that most characters are letters or spaces
+    alpha_count = sum(1 for c in text if c.isalpha() or c.isspace())
+    if alpha_count / len(text) < 0.8:
+        return False
+
+    return True
+
+
+def parse_faculty_generic(html: str, base_url: str) -> list[dict]:
+    """Generic parser that extracts faculty names and their linked profile URLs.
+
+    Works by finding all links where the text looks like a name and the href
+    looks like a profile URL.
+    """
     soup = BeautifulSoup(html, "html.parser")
     faculty_list = []
+    seen_urls = set()
 
+    # Strategy 1: Try CS-style parsing (div.views-row with div.name)
     for row in soup.select("div.views-row"):
         name_div = row.select_one("div.name")
         if not name_div:
@@ -142,31 +180,77 @@ def parse_faculty_directory(html: str, base_url: str) -> list[dict]:
         name_link = name_div.select_one("a")
         name = name_link.get_text(strip=True) if name_link else name_div.get_text(strip=True)
 
-        # Extract email and department from directory page
+        if not name:
+            continue
+
         email = extract_email(row)
         department = extract_department(row)
 
-        # Find profile URL
+        profile_url = None
         if name_link and name_link.get("href"):
             href = name_link["href"]
-            # Handle both absolute and relative URLs
             if href.startswith("http"):
                 profile_url = href
             else:
                 profile_url = base_url + href
-        else:
-            profile_url = None
 
-        # Use URL-based department if not found in HTML
-        if not department:
-            department = extract_department_from_url(profile_url)
+        if profile_url and profile_url not in seen_urls:
+            seen_urls.add(profile_url)
+            if not department:
+                department = extract_department_from_url(profile_url)
+
+            faculty_list.append({
+                "name": name,
+                "department": department,
+                "email": email,
+                "profile_url": profile_url,
+                "website": None
+            })
+            print(f"  {name}: {profile_url}")
+
+    # Strategy 2: Find links that look like faculty profiles (e.g., /people/name/)
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        name = link.get_text(strip=True)
+
+        # Skip if not a profile-like URL
+        if "/people/" not in href:
+            continue
+
+        # Skip index pages
+        parts = href.rstrip("/").split("/")
+        if len(parts) < 2 or parts[-1] == "people":
+            continue
+
+        # Check if text looks like a name
+        if not is_likely_name(name):
+            continue
+
+        # Build absolute URL
+        if href.startswith("http"):
+            profile_url = href
+        else:
+            profile_url = base_url + href
+
+        # Skip duplicates
+        if profile_url in seen_urls:
+            continue
+        seen_urls.add(profile_url)
+
+        # Try to find email from nearby mailto link
+        email = None
+        parent = link.find_parent(["div", "article", "section", "li"])
+        if parent:
+            mailto = parent.find("a", href=lambda h: h and h.startswith("mailto:"))
+            if mailto:
+                email = mailto["href"].replace("mailto:", "")
 
         faculty_list.append({
             "name": name,
-            "department": department,
+            "department": extract_department_from_url(profile_url),
             "email": email,
             "profile_url": profile_url,
-            "website": None  # Will be filled in later
+            "website": None
         })
         print(f"  {name}: {profile_url}")
 
@@ -214,11 +298,51 @@ def parse_profile_page(profile_url: str) -> dict:
 
 
 if __name__ == "__main__":
-    faculty = parse_all_faculty_pages(DEPARTMENT_URLS["computer_science"])
-    print("\n=== Faculty Results ===")
-    for f in faculty:
+    from scraper.sources.data import get_db_connection, init_faculty_table, store_faculty
+
+    all_faculty = []
+    seen_names = set()
+
+    for dept_name, dept_url in DEPARTMENT_URLS.items():
+        print(f"\n{'='*60}")
+        print(f"Scraping {dept_name}...")
+        print(f"{'='*60}")
+
+        faculty = parse_all_faculty_pages(dept_url)
+
+        for f in faculty:
+            if f["name"] in seen_names:
+                for existing in all_faculty:
+                    if existing["name"] == f["name"]:
+                        if not existing["website"] and f["website"]:
+                            existing["website"] = f["website"]
+                        if not existing["email"] and f["email"]:
+                            existing["email"] = f["email"]
+                        break
+            else:
+                seen_names.add(f["name"])
+                all_faculty.append(f)
+
+    # Store in database
+    print(f"\n{'='*60}")
+    print(f"Storing {len(all_faculty)} faculty members in database...")
+    print(f"{'='*60}")
+
+    conn = get_db_connection()
+    try:
+        init_faculty_table(conn)
+        count = store_faculty(conn, all_faculty)
+        print(f"Successfully stored {count} faculty members")
+    finally:
+        conn.close()
+
+    print(f"\n{'='*60}")
+    print(f"=== Faculty Results ({len(all_faculty)} total) ===")
+    print(f"{'='*60}")
+    for f in all_faculty:
         print(f"Name: {f['name']}")
         print(f"  Department: {f['department']}")
         print(f"  Email: {f['email']}")
         print(f"  Website: {f['website']}")
+        print(f"  Profile: {f['profile_url']}")
         print()
