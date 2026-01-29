@@ -9,6 +9,7 @@ from .publications_db import (
 )
 from .faculty_db import (
     Faculty,
+    drop_faculty_table,
     init_faculty_table,
     store_faculty,
     get_all_faculty,
@@ -24,6 +25,7 @@ __all__ = [
     "store_publications",
     "get_publications_for_professor",
     "Faculty",
+    "drop_faculty_table",
     "init_faculty_table",
     "store_faculty",
     "get_all_faculty",

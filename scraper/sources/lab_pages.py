@@ -367,34 +367,274 @@ def extract_lab_pages_batch(
 
 
 
+FACULTY_EXTRACTION_SYSTEM_PROMPT = """You are an expert at analyzing academic faculty research profiles.
+
+You will receive:
+1. HTML content from a faculty member's website or profile page
+2. Abstracts from their top publications (if available)
+
+Your task is to synthesize this information and extract a comprehensive research profile.
+
+IMPORTANT GUIDELINES:
+1. Combine information from BOTH the webpage AND the publication abstracts
+2. For research_summary: Create a coherent 1-3 paragraph summary that captures their main research themes
+3. For research_areas: Extract specific keywords and topics from both sources
+4. Prioritize information from the webpage for URLs, but use publication abstracts to enrich the research understanding
+
+RULES:
+- Return ONLY valid JSON matching the specified schema
+- Use null for fields where information is not found
+- Do NOT hallucinate or invent information not present in the sources"""
+
+
+FACULTY_EXTRACTION_USER_PROMPT = """Analyze this faculty member's research profile.
+
+Faculty Name: {faculty_name}
+
+=== WEBPAGE CONTENT ===
+Source URL: {source_url}
+
+{html_content}
+
+=== PUBLICATION ABSTRACTS ===
+{publication_abstracts}
+
+Extract and return a JSON object with these fields:
+- research_summary: string or null (1-3 paragraph research description synthesizing both sources)
+- research_areas: array of strings (research keywords/topics from both sources)
+- lab_url: string or null (link to research lab from webpage)
+- publications_url: string or null (link to publications page from webpage)
+- personal_site_url: string or null (link to separate personal website)
+
+Return ONLY valid JSON, no additional text."""
+
+
+class FacultyProfileExtractor:
+    """
+    Extracts research profiles for faculty by combining webpage content
+    with publication abstracts from the database.
+    """
+
+    def __init__(
+        self,
+        timeout: int = 30,
+        max_retries: int = 3,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
+        self.fetcher = HTMLFetcher(timeout=timeout, max_retries=max_retries)
+        self.extractor = OpenAIExtractor(api_key=api_key, model=model)
+
+    def _format_publications(self, publications: List) -> str:
+        """Format publication abstracts for the LLM prompt."""
+        if not publications:
+            return "No publications found in database."
+
+        parts = []
+        for i, pub in enumerate(publications, 1):
+            title = pub.title if hasattr(pub, 'title') else pub.get('title', 'Untitled')
+            abstract = pub.abstract if hasattr(pub, 'abstract') else pub.get('abstract')
+            citations = pub.citation_count if hasattr(pub, 'citation_count') else pub.get('citation_count', 0)
+
+            part = f"{i}. {title} (Citations: {citations})"
+            if abstract:
+                # Truncate long abstracts
+                if len(abstract) > 500:
+                    abstract = abstract[:500] + "..."
+                part += f"\n   Abstract: {abstract}"
+            parts.append(part)
+
+        return "\n\n".join(parts)
+
+    def extract_for_faculty(
+        self,
+        faculty_name: str,
+        page_url: str,
+        publications: List = None
+    ) -> LabPageExtractionResult:
+        """
+        Extract research profile for a faculty member.
+
+        Args:
+            faculty_name: Name of the faculty member
+            page_url: URL to their webpage (profile or personal site)
+            publications: List of Publication objects from database
+
+        Returns:
+            LabPageExtractionResult with extracted data
+        """
+        if not page_url:
+            return LabPageExtractionResult(
+                source_url="",
+                extraction_successful=False,
+                error_message="No URL provided for faculty member",
+            )
+
+        # Fetch and clean HTML
+        html, fetch_error = self.fetcher.fetch(page_url)
+
+        if fetch_error:
+            return LabPageExtractionResult(
+                source_url=page_url,
+                extraction_successful=False,
+                error_message=f"Failed to fetch page: {fetch_error}",
+            )
+
+        cleaned_html = self.fetcher.clean_html_for_llm(html)
+
+        if not cleaned_html.strip():
+            cleaned_html = "(No content extracted from webpage)"
+
+        # Format publications
+        pub_text = self._format_publications(publications or [])
+
+        # Build prompt and call LLM
+        try:
+            user_prompt = FACULTY_EXTRACTION_USER_PROMPT.format(
+                faculty_name=faculty_name,
+                source_url=page_url,
+                html_content=cleaned_html,
+                publication_abstracts=pub_text,
+            )
+
+            extracted_data = self.extractor.extract_structured(
+                system_prompt=FACULTY_EXTRACTION_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+            )
+
+            return LabPageExtractionResult(
+                research_summary=extracted_data.get("research_summary"),
+                research_areas=extracted_data.get("research_areas", []),
+                lab_url=extracted_data.get("lab_url"),
+                publications_url=extracted_data.get("publications_url"),
+                personal_site_url=extracted_data.get("personal_site_url"),
+                source_url=page_url,
+                extraction_successful=True,
+            )
+
+        except json.JSONDecodeError as e:
+            return LabPageExtractionResult(
+                source_url=page_url,
+                extraction_successful=False,
+                error_message=f"Failed to parse LLM response as JSON: {e}",
+            )
+        except Exception as e:
+            return LabPageExtractionResult(
+                source_url=page_url,
+                extraction_successful=False,
+                error_message=f"LLM extraction failed: {type(e).__name__}: {e}",
+            )
+
+
+def process_all_faculty(delay_between_requests: float = 1.0):
+    """
+    Process all faculty in the database, extracting research profiles
+    by combining webpage content with publication abstracts.
+    """
+    from scraper.sources.data import (
+        get_db_connection,
+        get_all_faculty,
+        get_publications_for_professor,
+    )
+
+    conn = get_db_connection()
+    faculty_list = get_all_faculty(conn)
+
+    if not faculty_list:
+        print("No faculty found in database.")
+        conn.close()
+        return []
+
+    print(f"Processing {len(faculty_list)} faculty members...")
+
+    extractor = FacultyProfileExtractor()
+    results = []
+
+    for i, faculty in enumerate(faculty_list, 1):
+        name = faculty.name
+        # Use website_url if available, otherwise profile_url
+        url = faculty.website_url or faculty.profile_url
+
+        print(f"\n[{i}/{len(faculty_list)}] {name}")
+        print(f"  URL: {url}")
+
+        # Get publications for this faculty member
+        publications = get_publications_for_professor(conn, name)
+        print(f"  Publications found: {len(publications)}")
+
+        if not url:
+            print("  Skipping - no URL available")
+            results.append((faculty, None))
+            continue
+
+        # Extract profile
+        result = extractor.extract_for_faculty(name, url, publications)
+        results.append((faculty, result))
+
+        if result.extraction_successful:
+            print(f"  Success!")
+            if result.research_areas:
+                print(f"  Research areas: {', '.join(result.research_areas[:5])}")
+        else:
+            print(f"  Error: {result.error_message}")
+
+        # Rate limiting
+        if i < len(faculty_list):
+            time.sleep(delay_between_requests)
+
+    conn.close()
+
+    # Summary
+    successful = sum(1 for _, r in results if r and r.extraction_successful)
+    print(f"\n{'='*60}")
+    print(f"Completed: {successful}/{len(faculty_list)} successful extractions")
+    print(f"{'='*60}")
+
+    return results
+
+
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) < 2:
-        print("Usage: python -m scraper.sources.lab_pages <url>")
+    if len(sys.argv) > 1 and sys.argv[1] == "--all":
+        # Process all faculty from database
+        print("Processing all faculty from database...")
+        results = process_all_faculty(delay_between_requests=1.0)
+
+        print("\n=== Results Summary ===")
+        for faculty, result in results:
+            status = "OK" if result and result.extraction_successful else "FAILED"
+            print(f"{status}: {faculty.name}")
+
+    elif len(sys.argv) > 1:
+        # Single URL mode
+        url = sys.argv[1]
+        print(f"Extracting from: {url}")
+
+        result = extract_lab_page(url)
+
+        print(f"\n=== Extraction Result ===")
+        print(f"Source: {result.source_url}")
+        print(f"Success: {result.extraction_successful}")
+
+        if result.research_summary:
+            summary = result.research_summary
+            if len(summary) > 500:
+                summary = summary[:500] + "..."
+            print(f"\nResearch Summary:\n{summary}")
+
+        if result.research_areas:
+            print(f"\nResearch Areas: {', '.join(result.research_areas)}")
+
+        print(f"\nLab URL: {result.lab_url}")
+        print(f"Publications URL: {result.publications_url}")
+        print(f"Personal Site URL: {result.personal_site_url}")
+
+        if result.error_message:
+            print(f"\nError: {result.error_message}")
+
+    else:
+        print("Usage:")
+        print("  python -m scraper.sources.lab_pages <url>       # Extract single URL")
+        print("  python -m scraper.sources.lab_pages --all       # Process all faculty from database")
         sys.exit(1)
-
-    url = sys.argv[1]
-    print(f"Extracting from: {url}")
-
-    result = extract_lab_page(url)
-
-    print(f"\n=== Extraction Result ===")
-    print(f"Source: {result.source_url}")
-    print(f"Success: {result.extraction_successful}")
-
-    if result.research_summary:
-        summary = result.research_summary
-        if len(summary) > 500:
-            summary = summary[:500] + "..."
-        print(f"\nResearch Summary:\n{summary}")
-
-    if result.research_areas:
-        print(f"\nResearch Areas: {', '.join(result.research_areas)}")
-
-    print(f"\nLab URL: {result.lab_url}")
-    print(f"Publications URL: {result.publications_url}")
-    print(f"Personal Site URL: {result.personal_site_url}")
-
-    if result.error_message:
-        print(f"\nError: {result.error_message}")

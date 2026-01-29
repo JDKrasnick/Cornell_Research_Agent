@@ -14,12 +14,17 @@ class Faculty:
     id: Optional[int]
     name: str
     website_url: Optional[str]
-    lab_page_url: Optional[str]
     email: Optional[str]
     department: Optional[str]
     profile_url: Optional[str]
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+def drop_faculty_table(conn: sqlite3.Connection) -> None:
+    """Drop the faculty table if it exists."""
+    conn.execute("DROP TABLE IF EXISTS faculty")
+    conn.commit()
 
 
 def init_faculty_table(conn: sqlite3.Connection) -> None:
@@ -29,7 +34,6 @@ def init_faculty_table(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             website_url TEXT,
-            lab_page_url TEXT,
             email TEXT,
             department TEXT,
             profile_url TEXT,
@@ -66,11 +70,10 @@ def store_faculty(conn: sqlite3.Connection, faculty_list: List[dict]) -> int:
     for f in faculty_list:
         cursor.execute("""
             INSERT INTO faculty (
-                name, website_url, lab_page_url, email, department, profile_url, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                name, website_url, email, department, profile_url, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(name) DO UPDATE SET
                 website_url = COALESCE(excluded.website_url, faculty.website_url),
-                lab_page_url = COALESCE(excluded.lab_page_url, faculty.lab_page_url),
                 email = COALESCE(excluded.email, faculty.email),
                 department = COALESCE(excluded.department, faculty.department),
                 profile_url = COALESCE(excluded.profile_url, faculty.profile_url),
@@ -78,7 +81,6 @@ def store_faculty(conn: sqlite3.Connection, faculty_list: List[dict]) -> int:
         """, (
             f.get("name"),
             f.get("website"),
-            f.get("lab_page"),
             f.get("email"),
             f.get("department"),
             f.get("profile_url"),
@@ -93,7 +95,7 @@ def store_faculty(conn: sqlite3.Connection, faculty_list: List[dict]) -> int:
 def get_all_faculty(conn: sqlite3.Connection) -> List[Faculty]:
     """Retrieve all faculty members from the database."""
     cursor = conn.execute("""
-        SELECT id, name, website_url, lab_page_url, email, department, profile_url,
+        SELECT id, name, website_url, email, department, profile_url,
                created_at, updated_at
         FROM faculty
         ORDER BY name
@@ -105,12 +107,11 @@ def get_all_faculty(conn: sqlite3.Connection) -> List[Faculty]:
             id=row[0],
             name=row[1],
             website_url=row[2],
-            lab_page_url=row[3],
-            email=row[4],
-            department=row[5],
-            profile_url=row[6],
-            created_at=datetime.fromisoformat(row[7]) if row[7] else None,
-            updated_at=datetime.fromisoformat(row[8]) if row[8] else None
+            email=row[3],
+            department=row[4],
+            profile_url=row[5],
+            created_at=datetime.fromisoformat(row[6]) if row[6] else None,
+            updated_at=datetime.fromisoformat(row[7]) if row[7] else None
         )
         for row in rows
     ]
@@ -119,7 +120,7 @@ def get_all_faculty(conn: sqlite3.Connection) -> List[Faculty]:
 def get_faculty_by_name(conn: sqlite3.Connection, name: str) -> Optional[Faculty]:
     """Retrieve a faculty member by name."""
     cursor = conn.execute("""
-        SELECT id, name, website_url, lab_page_url, email, department, profile_url,
+        SELECT id, name, website_url, email, department, profile_url,
                created_at, updated_at
         FROM faculty
         WHERE name = ?
@@ -133,19 +134,18 @@ def get_faculty_by_name(conn: sqlite3.Connection, name: str) -> Optional[Faculty
         id=row[0],
         name=row[1],
         website_url=row[2],
-        lab_page_url=row[3],
-        email=row[4],
-        department=row[5],
-        profile_url=row[6],
-        created_at=datetime.fromisoformat(row[7]) if row[7] else None,
-        updated_at=datetime.fromisoformat(row[8]) if row[8] else None
+        email=row[3],
+        department=row[4],
+        profile_url=row[5],
+        created_at=datetime.fromisoformat(row[6]) if row[6] else None,
+        updated_at=datetime.fromisoformat(row[7]) if row[7] else None
     )
 
 
 def get_faculty_by_department(conn: sqlite3.Connection, department: str) -> List[Faculty]:
     """Retrieve all faculty members in a department."""
     cursor = conn.execute("""
-        SELECT id, name, website_url, lab_page_url, email, department, profile_url,
+        SELECT id, name, website_url, email, department, profile_url,
                created_at, updated_at
         FROM faculty
         WHERE department = ?
@@ -158,12 +158,11 @@ def get_faculty_by_department(conn: sqlite3.Connection, department: str) -> List
             id=row[0],
             name=row[1],
             website_url=row[2],
-            lab_page_url=row[3],
-            email=row[4],
-            department=row[5],
-            profile_url=row[6],
-            created_at=datetime.fromisoformat(row[7]) if row[7] else None,
-            updated_at=datetime.fromisoformat(row[8]) if row[8] else None
+            email=row[3],
+            department=row[4],
+            profile_url=row[5],
+            created_at=datetime.fromisoformat(row[6]) if row[6] else None,
+            updated_at=datetime.fromisoformat(row[7]) if row[7] else None
         )
         for row in rows
     ]

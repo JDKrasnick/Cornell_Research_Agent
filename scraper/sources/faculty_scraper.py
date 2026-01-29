@@ -25,12 +25,19 @@ def extract_faculty_html(url):
 
 def extract_all_pages(base_url: str) -> list[str]:
     """Fetch all paginated pages from the directory."""
+    import hashlib
+
     pages = []
+    seen_hashes = set()
 
     # First, fetch the base page
     html = extract_faculty_html(base_url)
     if not html:
         return pages
+
+    # Track content hash to detect duplicate pages
+    content_hash = hashlib.md5(html.encode()).hexdigest()
+    seen_hashes.add(content_hash)
     pages.append(html)
 
     # Try pagination with ?page=N
@@ -41,6 +48,13 @@ def extract_all_pages(base_url: str) -> list[str]:
 
         if not html:
             break
+
+        # Check if this is a duplicate page (same content as before)
+        content_hash = hashlib.md5(html.encode()).hexdigest()
+        if content_hash in seen_hashes:
+            print(f"  Page {page_num} is duplicate, stopping pagination")
+            break
+        seen_hashes.add(content_hash)
 
         soup = BeautifulSoup(html, "html.parser")
         # Check if page has any content (faculty rows or profile links)
@@ -298,11 +312,14 @@ def parse_profile_page(profile_url: str) -> dict:
 
 
 if __name__ == "__main__":
-    from scraper.sources.data import get_db_connection, init_faculty_table, store_faculty
+    from scraper.sources.data import get_db_connection, init_faculty_table, store_faculty, drop_faculty_table
 
-    all_faculty = []
+
+
+    all_faculty = parse_all_faculty_pages(DEPARTMENT_URLS['computer_science'])
     seen_names = set()
 
+    """
     for dept_name, dept_url in DEPARTMENT_URLS.items():
         print(f"\n{'='*60}")
         print(f"Scraping {dept_name}...")
@@ -312,16 +329,13 @@ if __name__ == "__main__":
 
         for f in faculty:
             if f["name"] in seen_names:
-                for existing in all_faculty:
-                    if existing["name"] == f["name"]:
-                        if not existing["website"] and f["website"]:
-                            existing["website"] = f["website"]
-                        if not existing["email"] and f["email"]:
-                            existing["email"] = f["email"]
-                        break
+                pass
             else:
                 seen_names.add(f["name"])
-                all_faculty.append(f)
+    """
+
+
+
 
     # Store in database
     print(f"\n{'='*60}")
@@ -329,6 +343,7 @@ if __name__ == "__main__":
     print(f"{'='*60}")
 
     conn = get_db_connection()
+
     try:
         init_faculty_table(conn)
         count = store_faculty(conn, all_faculty)
