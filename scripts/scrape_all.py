@@ -136,7 +136,7 @@ if __name__ == "__main__":
         type=float,
         default=3.0,
         help="Delay between API requests in seconds (default: 3.0)"
-    )
+)
     parser.add_argument(
         "--list",
         action="store_true",
