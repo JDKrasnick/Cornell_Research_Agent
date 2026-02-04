@@ -14,7 +14,7 @@ from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
-from openai import OpenAI
+import anthropic
 from pydantic import BaseModel, Field
 
 from config.settings import settings
@@ -181,30 +181,39 @@ class HTMLFetcher:
 
 
 # ========================
-class OpenAIExtractor:
-    """OpenAI GPT client for structured extraction."""
+class LLMExtractor:
+    """Anthropic Claude client for structured extraction."""
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        self.api_key = api_key or settings.openai_api_key
+        self.api_key = api_key or settings.anthropic_api_key
         self.model = model or settings.llm_model
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = anthropic.Anthropic(api_key=self.api_key)
 
     def extract_structured(
         self, system_prompt: str, user_prompt: str
     ) -> dict:
         """Extract structured data using the LLM."""
-        response = self.client.chat.completions.create(
+        response = self.client.messages.create(
             model=self.model,
+            system=system_prompt,
             messages=[
-                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            response_format={"type": "json_object"},
             temperature=0.1,
             max_tokens=2000,
         )
 
-        content = response.choices[0].message.content
+        content = response.content[0].text.strip()
+
+        # Claude may wrap JSON in markdown code blocks
+        if content.startswith("```"):
+            # Remove ```json or ``` prefix and trailing ```
+            lines = content.split("\n")
+            lines = lines[1:]  # Remove opening ```json
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]  # Remove closing ```
+            content = "\n".join(lines).strip()
+
         return json.loads(content)
 
 
@@ -222,7 +231,7 @@ class LabPageExtractor:
         model: Optional[str] = None,
     ):
         self.fetcher = HTMLFetcher(timeout=timeout, max_retries=max_retries)
-        self.extractor = OpenAIExtractor(api_key=api_key, model=model)
+        self.extractor = LLMExtractor(api_key=api_key, model=model)
 
     def _resolve_urls(self, data: dict, base_url: str) -> dict:
         """Convert relative URLs to absolute URLs."""
@@ -380,7 +389,7 @@ IMPORTANT GUIDELINES:
 2. For research_summary: Create a coherent 1-3 paragraph summary that captures their main research themes
 3. For research_areas: Extract specific keywords and topics from both sources
 4. Prioritize information from the webpage for URLs, but use publication abstracts to enrich the research understanding
-
+/
 RULES:
 - Return ONLY valid JSON matching the specified schema
 - Use null for fields where information is not found
@@ -423,7 +432,7 @@ class FacultyProfileExtractor:
         model: Optional[str] = None,
     ):
         self.fetcher = HTMLFetcher(timeout=timeout, max_retries=max_retries)
-        self.extractor = OpenAIExtractor(api_key=api_key, model=model)
+        self.extractor = LLMExtractor(api_key=api_key, model=model)
 
     def _format_publications(self, publications: List) -> str:
         """Format publication abstracts for the LLM prompt."""

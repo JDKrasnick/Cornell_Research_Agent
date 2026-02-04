@@ -15,6 +15,7 @@ from .faculty_db import (
     get_all_faculty,
     get_faculty_by_name,
     get_faculty_by_department,
+    update_research_interests,
 )
 
 __all__ = [
@@ -31,4 +32,5 @@ __all__ = [
     "get_all_faculty",
     "get_faculty_by_name",
     "get_faculty_by_department",
+    "update_research_interests",
 ]

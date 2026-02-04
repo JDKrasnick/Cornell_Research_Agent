@@ -17,6 +17,7 @@ class Faculty:
     email: Optional[str]
     department: Optional[str]
     profile_url: Optional[str]
+    research_interests: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -37,6 +38,7 @@ def init_faculty_table(conn: sqlite3.Connection) -> None:
             email TEXT,
             department TEXT,
             profile_url TEXT,
+            research_interests TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -96,7 +98,7 @@ def get_all_faculty(conn: sqlite3.Connection) -> List[Faculty]:
     """Retrieve all faculty members from the database."""
     cursor = conn.execute("""
         SELECT id, name, website_url, email, department, profile_url,
-               created_at, updated_at
+               research_interests, created_at, updated_at
         FROM faculty
         ORDER BY name
     """)
@@ -110,8 +112,9 @@ def get_all_faculty(conn: sqlite3.Connection) -> List[Faculty]:
             email=row[3],
             department=row[4],
             profile_url=row[5],
-            created_at=datetime.fromisoformat(row[6]) if row[6] else None,
-            updated_at=datetime.fromisoformat(row[7]) if row[7] else None
+            research_interests=row[6],
+            created_at=datetime.fromisoformat(row[7]) if row[7] else None,
+            updated_at=datetime.fromisoformat(row[8]) if row[8] else None
         )
         for row in rows
     ]
@@ -121,7 +124,7 @@ def get_faculty_by_name(conn: sqlite3.Connection, name: str) -> Optional[Faculty
     """Retrieve a faculty member by name."""
     cursor = conn.execute("""
         SELECT id, name, website_url, email, department, profile_url,
-               created_at, updated_at
+               research_interests, created_at, updated_at
         FROM faculty
         WHERE name = ?
     """, (name,))
@@ -137,16 +140,41 @@ def get_faculty_by_name(conn: sqlite3.Connection, name: str) -> Optional[Faculty
         email=row[3],
         department=row[4],
         profile_url=row[5],
-        created_at=datetime.fromisoformat(row[6]) if row[6] else None,
-        updated_at=datetime.fromisoformat(row[7]) if row[7] else None
+        research_interests=row[6],
+        created_at=datetime.fromisoformat(row[7]) if row[7] else None,
+        updated_at=datetime.fromisoformat(row[8]) if row[8] else None
     )
+
+
+def update_research_interests(
+    conn: sqlite3.Connection, name: str, research_interests: str
+) -> bool:
+    """
+    Update the research_interests field for a faculty member.
+
+    Args:
+        conn: Database connection
+        name: Faculty member name
+        research_interests: Comma-separated research interests string
+
+    Returns:
+        True if a row was updated, False if faculty not found
+    """
+    now = datetime.now().isoformat()
+    cursor = conn.execute("""
+        UPDATE faculty
+        SET research_interests = ?, updated_at = ?
+        WHERE name = ?
+    """, (research_interests, now, name))
+    conn.commit()
+    return cursor.rowcount > 0
 
 
 def get_faculty_by_department(conn: sqlite3.Connection, department: str) -> List[Faculty]:
     """Retrieve all faculty members in a department."""
     cursor = conn.execute("""
         SELECT id, name, website_url, email, department, profile_url,
-               created_at, updated_at
+               research_interests, created_at, updated_at
         FROM faculty
         WHERE department = ?
         ORDER BY name
@@ -161,8 +189,9 @@ def get_faculty_by_department(conn: sqlite3.Connection, department: str) -> List
             email=row[3],
             department=row[4],
             profile_url=row[5],
-            created_at=datetime.fromisoformat(row[6]) if row[6] else None,
-            updated_at=datetime.fromisoformat(row[7]) if row[7] else None
+            research_interests=row[6],
+            created_at=datetime.fromisoformat(row[7]) if row[7] else None,
+            updated_at=datetime.fromisoformat(row[8]) if row[8] else None
         )
         for row in rows
     ]

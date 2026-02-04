@@ -1,3 +1,4 @@
+
 """Configuration settings for the Cornell Lab Matchmaker.
 
 Handles API keys, model settings, and database paths.
@@ -35,7 +36,7 @@ class Settings(BaseModel):
 
     # Model settings
     embedding_model: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    llm_model: str = os.getenv("LLM_MODEL", "gpt-4o")
+    llm_model: str = os.getenv("LLM_MODEL", "claude-sonnet-4-20250514")
 
     class Config:
         arbitrary_types_allowed = True
