@@ -5,6 +5,7 @@ from .get_faculty_details import get_faculty_details
 from .search_publications import (
     search_publications,
     search_author_publications,
+    search_publications_by_professor,
     PublicationSearchTool
 )
 from .fetch_webpage import fetch_webpage, extract_contact_info, WebPageFetcherTool
@@ -19,6 +20,7 @@ __all__ = [
     # Publications
     'search_publications',
     'search_author_publications',
+    'search_publications_by_professor',
     'PublicationSearchTool',
 
     # Web scraping
