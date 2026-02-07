@@ -3,7 +3,7 @@
 TOOLS = [
     {
         "name": "search_faculty",
-        "description": "Search for Cornell faculty members whose research matches the given query. Use this to find professors working in areas the student is interested in. Returns top matches ranked by relevance.",
+        "description": "Search for Cornell faculty members whose research matches the given query. Searches across both research interests AND publication content (titles and abstracts of top papers). Use this to find professors working in areas the student is interested in. Returns top matches ranked by relevance.",
         "input_schema": {
             "type": "object",
             "properties": {

@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 from config.settings import settings
 from scraper.sources.data import get_db_connection, get_all_faculty
+from scraper.sources.data.publications_db import get_publications_for_professor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -30,7 +31,9 @@ class FacultyEmbeddingBuilder:
         self,
         embedding_model_name: str = "all-MiniLM-L6-v2",
         vector_store_path: Optional[Path] = None,
-        collection_name: str = "faculty_research_interests"
+        collection_name: str = "faculty_research_interests",
+        include_publications: bool = True,
+        max_publications: int = 5
     ):
         """
         Initialize the embedding builder.
@@ -39,10 +42,14 @@ class FacultyEmbeddingBuilder:
             embedding_model_name: Name of the sentence-transformer model
             vector_store_path: Path to store ChromaDB data
             collection_name: Name of the ChromaDB collection
+            include_publications: Whether to include publication content in embeddings
+            max_publications: Maximum number of top publications to include (default: 5)
         """
         self.embedding_model_name = embedding_model_name
         self.vector_store_path = vector_store_path or settings.vector_store_path
         self.collection_name = collection_name
+        self.include_publications = include_publications
+        self.max_publications = max_publications
 
         logger.info(f"Initializing embedding model: {embedding_model_name}")
         self.embedding_model = SentenceTransformer(embedding_model_name)
@@ -123,15 +130,53 @@ class FacultyEmbeddingBuilder:
         metadatas = []
         ids = []
 
-        for faculty in faculty_with_interests:
+        logger.info(f"Building embeddings {'WITH' if self.include_publications else 'WITHOUT'} publication content...")
+
+        for faculty in tqdm(faculty_with_interests, desc="Processing faculty"):
             faculty_id = f"faculty_{faculty.id}"
 
             # Skip if already embedded (unless force_rebuild)
             if not force_rebuild and faculty_id in existing_ids:
                 continue
 
-            # Combine name and research interests for better context
+            # Start with name and research interests
             document_text = f"{faculty.name}: {faculty.research_interests}"
+
+            # Add publication content if enabled
+            if self.include_publications:
+                try:
+                    conn = get_db_connection()
+                    publications = get_publications_for_professor(conn, faculty.name)
+                    conn.close()
+
+                    if publications:
+                        # Sort by citation count and take top N
+                        top_pubs = sorted(
+                            publications,
+                            key=lambda p: p.citation_count if p.citation_count else 0,
+                            reverse=True
+                        )[:self.max_publications]
+
+                        # Add publication titles and abbreviated abstracts
+                        pub_texts = []
+                        for pub in top_pubs:
+                            # Include title
+                            pub_text = f"Paper: {pub.title}"
+
+                            # Include first 300 chars of abstract if available
+                            if pub.abstract:
+                                abstract_preview = pub.abstract[:300]
+                                if len(pub.abstract) > 300:
+                                    abstract_preview += "..."
+                                pub_text += f" - {abstract_preview}"
+
+                            pub_texts.append(pub_text)
+
+                        if pub_texts:
+                            document_text += "\n\nKey Publications:\n" + "\n".join(pub_texts)
+
+                except Exception as e:
+                    logger.debug(f"Could not fetch publications for {faculty.name}: {e}")
 
             documents_to_embed.append(document_text)
             metadatas.append({
@@ -248,11 +293,26 @@ def main():
         type=str,
         help="Test the embeddings with a sample query"
     )
+    parser.add_argument(
+        "--no-publications",
+        action="store_true",
+        help="Exclude publication content from embeddings (faster but less accurate)"
+    )
+    parser.add_argument(
+        "--max-publications",
+        type=int,
+        default=5,
+        help="Maximum number of top publications to include per faculty (default: 5)"
+    )
 
     args = parser.parse_args()
 
     # Initialize builder
-    builder = FacultyEmbeddingBuilder(embedding_model_name=args.model)
+    builder = FacultyEmbeddingBuilder(
+        embedding_model_name=args.model,
+        include_publications=not args.no_publications,
+        max_publications=args.max_publications
+    )
 
     # Build embeddings
     logger.info("="*60)
