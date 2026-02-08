@@ -1,1 +1,0 @@
-"""Quick test harness for the agent."""
