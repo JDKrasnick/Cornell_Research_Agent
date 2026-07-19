@@ -88,7 +88,7 @@ Cornell Lab Matchmaker solves these problems by combining web scraping, semantic
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/Cornell_Research_Agent.git
+   git clone https://github.com/JDKrasnick/Cornell_Research_Agent.git
    cd Cornell_Research_Agent
    ```
 
